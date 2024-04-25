@@ -455,12 +455,13 @@ func (w *watcher) closeStream(wgs *watchGrpcStream) {
 	w.mu.Unlock()
 }
 
-func (w *watchGrpcStream) addSubstream(resp *pb.WatchResponse, ws *watcherStream) {
+func (w *watchGrpcStream) addSubstream(resp *pb.WatchResponse, ws *watcherStream, closing map[*watcherStream]struct{}) {
 	// check watch ID for backward compatibility (<= v3.3)
 	if resp.WatchId == InvalidWatchID || (resp.Canceled && resp.CancelReason != "") {
 		w.closeErr = v3rpc.Error(errors.New(resp.CancelReason))
 		// failed; no channel
 		close(ws.recvc)
+		closing[ws] = struct{}{}
 		return
 	}
 	ws.id = resp.WatchId
@@ -591,7 +592,7 @@ func (w *watchGrpcStream) run() {
 				// response to head of queue creation
 				if len(w.resuming) != 0 {
 					if ws := w.resuming[0]; ws != nil {
-						w.addSubstream(pbresp, ws)
+						w.addSubstream(pbresp, ws, closing)
 						w.dispatchEvent(pbresp)
 						w.resuming[0] = nil
 					}
